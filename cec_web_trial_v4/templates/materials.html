@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Add Material</strong></div>
+      <div class="card-body">
+        <form method="post">
+          <div class="mb-3"><label class="form-label">Material Code</label><input class="form-control" name="code" placeholder="MAT-005" required></div>
+          <div class="mb-3"><label class="form-label">Material Name</label><input class="form-control" name="name" placeholder="Material name" required></div>
+          <div class="mb-3"><label class="form-label">UOM</label><input class="form-control" name="uom" value="KG"></div>
+          <div class="mb-3"><label class="form-label">Cost per KG</label><input class="form-control" type="number" step="0.01" name="cost_per_kg" value="0"></div>
+          <div class="mb-3"><label class="form-label">Stock Qty</label><input class="form-control" type="number" step="0.01" name="stock_qty" value="0"></div>
+          <button class="btn btn-dark w-100">Save Material</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white d-flex justify-content-between"><strong>Materials</strong><span>Total Value: RM {{ total_value }}</span></div>
+      <div class="card-body table-responsive">
+        <table class="table table-striped table-sm align-middle">
+          <thead><tr><th>Code</th><th>Name</th><th>UOM</th><th>Cost/KG</th><th>Stock Qty</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+            <tr><td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.uom }}</td><td>{{ row.cost_per_kg }}</td><td>{{ row.stock_qty }}</td></tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted">No materials yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

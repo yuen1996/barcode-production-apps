@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1">Factory Control Dashboard</h1>
+    <p class="text-muted mb-0">Now supports live machine tracking and customer files with multiple product lines.</p>
+  </div>
+  <div class="small text-muted">Trial version for internal testing</div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Customers</div><div class="metric-value">{{ summary.customers }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Open Customer Files</div><div class="metric-value">{{ summary.customer_files_open }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Pending File Lines</div><div class="metric-value">{{ summary.customer_file_lines_pending }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Open Jobs</div><div class="metric-value">{{ summary.jobs_open }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Open Batches</div><div class="metric-value">{{ summary.batches_open }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card metric-green"><div class="card-body"><div class="metric-label">Running Machines</div><div class="metric-value">{{ summary.running_machines }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card metric-red"><div class="card-body"><div class="metric-label">Breakdown Machines</div><div class="metric-value">{{ summary.breakdown_machines }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">OT Hours</div><div class="metric-value">{{ summary.ot_hours }}</div></div></div></div>
+  <div class="col-md-6 col-xl"><div class="card metric-card"><div class="card-body"><div class="metric-label">Material Value</div><div class="metric-value">RM {{ summary.material_value }}</div></div></div></div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <strong>Live Running Machines</strong>
+        <a href="{{ url_for('machine_board') }}" class="btn btn-sm btn-dark">Open machine board</a>
+      </div>
+      <div class="card-body table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Machine</th><th>Section</th><th>Line</th><th>Batch</th><th>Note</th></tr></thead>
+          <tbody>
+            {% for row in running_machines %}
+            <tr>
+              <td><span class="badge text-bg-success">RUNNING</span> {{ row.machine_code }}<div class="small text-muted">{{ row.machine_name }}</div></td>
+              <td>{{ row.section_name }}</td>
+              <td>{{ row.line_name or '-' }}</td>
+              <td>{{ row.batch_no or '-' }}</td>
+              <td>{{ row.current_note or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted">No running machines now.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><strong>Top Batch Variance</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Batch</th><th>Customer</th><th>Variance KG</th><th>Likely Loss Process</th></tr></thead>
+          <tbody>
+            {% for row in variance_rows %}
+            <tr>
+              <td>{{ row.batch_no }}</td>
+              <td>{{ row.customer_name }}</td>
+              <td>{{ row.variance_kg if row.variance_kg is not none else '-' }}</td>
+              <td>{{ row.probable_loss_process or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">No variance data yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Section WIP KG (by Next Process Barcodes)</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Section</th><th>Received KG</th><th>Issued Out KG</th><th>Estimated In Section KG</th></tr></thead>
+          <tbody>
+            {% for row in section_wip %}
+            <tr>
+              <td>{{ row.section }}</td>
+              <td>{{ row.received_kg }}</td>
+              <td>{{ row.issued_kg }}</td>
+              <td><strong>{{ row.in_section_kg }}</strong></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">No section WIP from transfer labels yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Recent Process Scans</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-striped table-sm align-middle">
+          <thead><tr><th>Time</th><th>Batch</th><th>Process</th><th>Machine</th><th>Input</th><th>Good</th><th>Reject</th></tr></thead>
+          <tbody>
+            {% for row in recent_logs %}
+            <tr>
+              <td>{{ row.scan_time }}</td>
+              <td>{{ row.batch_no }}</td>
+              <td>{{ row.process_name }}</td>
+              <td>{{ row.machine_label or '-' }}</td>
+              <td>{{ row.input_qty_kg }}</td>
+              <td>{{ row.good_qty_kg }}</td>
+              <td>{{ row.reject_qty_kg }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted">No process scans yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Recent Breakdowns</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-striped table-sm align-middle">
+          <thead><tr><th>Machine</th><th>Status</th><th>Start</th><th>Batch</th><th>Reason</th></tr></thead>
+          <tbody>
+            {% for row in recent_breakdowns %}
+            <tr>
+              <td>{{ row.machine_name }}</td>
+              <td><span class="badge text-bg-{{ 'danger' if row.status == 'OPEN' else 'secondary' }}">{{ row.status }}</span></td>
+              <td>{{ row.start_time }}</td>
+              <td>{{ row.batch_no or '-' }}</td>
+              <td>{{ row.reason }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted">No breakdown records yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

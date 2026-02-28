@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1">{{ item.file_no }} / Line {{ item.line_no }}</h1>
+    <p class="text-muted mb-0">{{ item.customer_code }} / {{ item.customer_name }} · {{ item.sku }} / {{ item.product_name }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-dark" href="{{ url_for('customer_file_detail', file_id=item.customer_file_id) }}">Back to file</a>
+    <a class="btn btn-dark" href="{{ url_for('item_tracker') }}">All items</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Current Status</div><div class="h4 mb-0">{{ item.status }}</div><div class="small text-muted mt-2">Stage: {{ item.current_stage }}</div></div></div></div>
+  <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Planner Ready Time</div><div class="h5 mb-1">{{ item.ready_at or '-' }}</div><div class="small text-muted">Remaining: {{ item.remaining_hours if item.remaining_hours is not none else '-' }} hrs</div></div></div></div>
+  <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Production Reference</div><div class="small">Job: <strong>{{ item.job_no or '-' }}</strong></div><div class="small">Batch: <strong>{{ item.batch_no or '-' }}</strong></div><div class="small">Machine: <strong>{{ item.latest_machine or '-' }}</strong></div></div></div></div>
+  <div class="col-md-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="text-muted small">Delivery Check</div><div class="small">Due date: <strong>{{ item.due_date or '-' }}</strong></div><div class="small">Risk: <strong>{{ item.risk }}</strong></div><div class="small">Last update: <strong>{{ item.last_update or '-' }}</strong></div></div></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-4">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white"><strong>Planner update</strong></div>
+      <div class="card-body">
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">Planner status</label>
+            <select class="form-select" name="planner_status" required>
+              {% for status in status_choices %}
+              <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Remaining hours</label>
+            <input class="form-control" type="number" step="0.1" name="remaining_hours" value="{{ item.remaining_hours if item.remaining_hours is not none else '' }}" placeholder="e.g. 12">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Ready at</label>
+            <input class="form-control" type="datetime-local" name="ready_at" value="{{ (item.ready_at or '').replace(' ', 'T') }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Planner note</label>
+            <textarea class="form-control" name="note" rows="4" placeholder="Explain queue, material waiting, urgent slot, expected release.">{{ item.planner_note or '' }}</textarea>
+          </div>
+          <button class="btn btn-dark w-100">Save planner update</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Item detail</strong></div>
+      <div class="card-body small">
+        <div class="mb-2"><span class="text-muted">Ordered Qty:</span> <strong>{{ item.ordered_qty_kg }} KG</strong></div>
+        <div class="mb-2"><span class="text-muted">PO:</span> <strong>{{ item.po_no or '-' }}</strong></div>
+        <div class="mb-2"><span class="text-muted">Preferred Line:</span> <strong>{% if item.preferred_line_code %}{{ item.preferred_line_code }} / {{ item.preferred_line_name }}{% else %}-{% endif %}</strong></div>
+        <div class="mb-2"><span class="text-muted">Remarks:</span> <strong>{{ item.remarks or '-' }}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-8">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white"><strong>Timeline trace</strong></div>
+      <div class="card-body">
+        <div class="timeline">
+          {% for row in timeline %}
+          <div class="border-start border-3 ps-3 pb-3 mb-3">
+            <div class="d-flex justify-content-between flex-wrap gap-2">
+              <div>
+                <div class="fw-semibold">{{ row.event_type.replace('_', ' ') }}</div>
+                <div class="small text-muted">{{ row.stage_name or '-' }} · {{ row.status_label }} · {{ row.user_role }}</div>
+              </div>
+              <div class="small text-muted">{{ row.event_time }}</div>
+            </div>
+            <div class="small mt-2">
+              {% if row.source_ref %}<div><span class="text-muted">Reference:</span> {{ row.source_ref }}</div>{% endif %}
+              <div>{{ row.note or '-' }}</div>
+            </div>
+          </div>
+          {% else %}
+          <div class="text-muted">No timeline events yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Process history for current batch</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-striped table-sm align-middle">
+          <thead><tr><th>Scan Time</th><th>Process</th><th>Machine</th><th>Input KG</th><th>Good KG</th><th>Reject KG</th><th>Remarks</th></tr></thead>
+          <tbody>
+            {% for row in process_rows %}
+            <tr>
+              <td>{{ row.scan_time }}</td>
+              <td>{{ row.process_name }}</td>
+              <td>{{ row.machine_label or '-' }}</td>
+              <td>{{ row.input_qty_kg }}</td>
+              <td>{{ row.good_qty_kg }}</td>
+              <td>{{ row.reject_qty_kg }}</td>
+              <td>{{ row.remarks or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted">No process history yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

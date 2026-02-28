@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Add Production Line</strong></div>
+      <div class="card-body">
+        <form method="post">
+          <div class="mb-3"><label class="form-label">Line Code</label><input class="form-control" name="code" placeholder="LINE-MX-C" required></div>
+          <div class="mb-3"><label class="form-label">Line Name</label><input class="form-control" name="name" placeholder="Mixing Line C" required></div>
+          <div class="mb-3"><label class="form-label">Section</label>
+            <select class="form-select" name="section_name" required>
+              <option value="">Select section</option>
+              {% for s in sections %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-dark w-100">Save Line</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Production Lines</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-striped table-sm align-middle">
+          <thead><tr><th>Code</th><th>Name</th><th>Section</th><th>Active</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+            <tr><td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.section_name }}</td><td>{{ 'Yes' if row.is_active else 'No' }}</td></tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">No lines yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

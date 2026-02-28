@@ -265,6 +265,32 @@ def init_db() -> None:
             note TEXT,
             FOREIGN KEY(item_id) REFERENCES customer_file_items(id)
         );
+
+        CREATE TABLE IF NOT EXISTS next_process_labels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transfer_barcode TEXT UNIQUE NOT NULL,
+            batch_id INTEGER NOT NULL,
+            from_process TEXT NOT NULL,
+            to_process TEXT NOT NULL,
+            issued_qty_kg REAL NOT NULL,
+            received_qty_kg REAL,
+            qty_loss_kg REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'ISSUED',
+            recipe_code TEXT,
+            item_name TEXT,
+            document_no TEXT,
+            customer_name TEXT,
+            issued_at TEXT NOT NULL,
+            received_at TEXT,
+            issued_machine_id INTEGER,
+            received_machine_id INTEGER,
+            issued_by TEXT,
+            received_by TEXT,
+            notes TEXT,
+            FOREIGN KEY(batch_id) REFERENCES batches(id),
+            FOREIGN KEY(issued_machine_id) REFERENCES machines(id),
+            FOREIGN KEY(received_machine_id) REFERENCES machines(id)
+        );
         '''
     )
 
@@ -793,6 +819,120 @@ def get_machine_choices_for_process(process_name: str | None = None) -> list[sql
     )
 
 
+
+
+def build_next_process_barcode(batch_no: str, from_process: str, to_process: str) -> str:
+    stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    return f"NP-{batch_no}-{from_process[:3]}-{to_process[:3]}-{stamp}"
+
+
+def create_next_process_label(batch_id: int, from_process: str, to_process: str, issued_qty_kg: float, machine_id: int | None, operator_name: str | None, notes: str | None = None) -> str | None:
+    batch_info = query_one(
+        """
+        SELECT b.batch_no, b.recipe_code, j.job_no, c.name AS customer_name, p.name AS item_name
+        FROM batches b
+        JOIN jobs j ON b.job_id = j.id
+        JOIN customers c ON j.customer_id = c.id
+        JOIN products p ON j.product_id = p.id
+        WHERE b.id = ?
+        """,
+        (batch_id,),
+    )
+    if not batch_info:
+        return None
+
+    barcode = build_next_process_barcode(batch_info['batch_no'], from_process, to_process)
+    try:
+        execute(
+            """INSERT INTO next_process_labels(
+                   transfer_barcode, batch_id, from_process, to_process, issued_qty_kg, recipe_code, item_name, document_no, customer_name,
+                   issued_at, issued_machine_id, issued_by, notes
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                barcode,
+                batch_id,
+                from_process,
+                to_process,
+                issued_qty_kg,
+                batch_info['recipe_code'],
+                batch_info['item_name'],
+                batch_info['job_no'],
+                batch_info['customer_name'],
+                datetime.now().strftime('%Y-%m-%d %H:%M'),
+                machine_id,
+                operator_name,
+                notes,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        barcode = f"{barcode}-{datetime.now().strftime('%f')}"
+        execute(
+            """INSERT INTO next_process_labels(
+                   transfer_barcode, batch_id, from_process, to_process, issued_qty_kg, recipe_code, item_name, document_no, customer_name,
+                   issued_at, issued_machine_id, issued_by, notes
+               ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                barcode,
+                batch_id,
+                from_process,
+                to_process,
+                issued_qty_kg,
+                batch_info['recipe_code'],
+                batch_info['item_name'],
+                batch_info['job_no'],
+                batch_info['customer_name'],
+                datetime.now().strftime('%Y-%m-%d %H:%M'),
+                machine_id,
+                operator_name,
+                notes,
+            ),
+        )
+    return barcode
+
+
+def receive_next_process_label(transfer_barcode: str, receiving_process: str, received_qty_kg: float, machine_id: int | None, received_by: str | None, notes: str | None = None) -> tuple[bool, str]:
+    label = query_one('SELECT * FROM next_process_labels WHERE transfer_barcode = ?', (transfer_barcode,))
+    if not label:
+        return False, 'Next process barcode not found.'
+    if label['status'] != 'ISSUED':
+        return False, 'This next process barcode was already received.'
+    if receiving_process != label['to_process']:
+        return False, f"Barcode is for {label['to_process']}, not {receiving_process}."
+
+    qty_loss_kg = max(0, round((label['issued_qty_kg'] or 0) - received_qty_kg, 2))
+    execute(
+        """UPDATE next_process_labels
+           SET received_qty_kg = ?, qty_loss_kg = ?, status = 'RECEIVED', received_at = ?, received_machine_id = ?, received_by = ?, notes = ?
+           WHERE id = ?""",
+        (
+            received_qty_kg,
+            qty_loss_kg,
+            datetime.now().strftime('%Y-%m-%d %H:%M'),
+            machine_id,
+            received_by,
+            notes or label['notes'],
+            label['id'],
+        ),
+    )
+    execute('UPDATE batches SET current_process = ?, status = ? WHERE id = ?', (receiving_process, 'OPEN', label['batch_id']))
+    return True, f"Received {received_qty_kg:.2f} KG (loss {qty_loss_kg:.2f} KG)."
+
+
+def get_section_wip_summary() -> list[dict[str, Any]]:
+    rows = []
+    for section in PROCESS_FLOW:
+        received = query_one(
+            "SELECT COALESCE(SUM(received_qty_kg), 0) AS qty FROM next_process_labels WHERE to_process = ? AND status = 'RECEIVED'",
+            (section,),
+        )['qty']
+        issued = query_one(
+            "SELECT COALESCE(SUM(issued_qty_kg), 0) AS qty FROM next_process_labels WHERE from_process = ?",
+            (section,),
+        )['qty']
+        in_section = round((received or 0) - (issued or 0), 2)
+        rows.append({'section': section, 'received_kg': round(received or 0, 2), 'issued_kg': round(issued or 0, 2), 'in_section_kg': in_section})
+    return rows
+
 def update_batch_stage(batch_id: int, process_name: str, next_action: str) -> None:
     if next_action == 'REJECTED':
         execute(
@@ -856,6 +996,7 @@ def dashboard():
         LIMIT 10
         '''
     )
+    section_wip = get_section_wip_summary()
     return render_template(
         'dashboard.html',
         summary=summary,
@@ -863,6 +1004,7 @@ def dashboard():
         recent_breakdowns=recent_breakdowns,
         variance_rows=variance_rows,
         running_machines=running_machines,
+        section_wip=section_wip,
     )
 
 
@@ -1360,6 +1502,31 @@ def scan():
     batch_lookup = None
     barcode = request.args.get('barcode', '').strip()
     if request.method == 'POST':
+        action_type = request.form.get('action_type', 'process_scan').strip()
+
+        if action_type == 'receive_next':
+            transfer_barcode = request.form.get('transfer_barcode', '').strip()
+            receiving_process = request.form.get('receiving_process', '').strip().upper()
+            receiver_name = request.form.get('receiver_name', '').strip()
+            receive_note = request.form.get('receive_note', '').strip()
+            machine_id_raw = request.form.get('receive_machine_id', '').strip()
+            try:
+                received_qty_kg = float(request.form.get('received_qty_kg', 0) or 0)
+            except ValueError:
+                flash('Received quantity must be numeric.', 'danger')
+                return redirect(url_for('scan'))
+            if receiving_process not in PROCESS_FLOW:
+                flash('Invalid receiving process.', 'danger')
+                return redirect(url_for('scan'))
+            if received_qty_kg <= 0:
+                flash('Received quantity must be more than zero.', 'danger')
+                return redirect(url_for('scan'))
+
+            machine_id = int(machine_id_raw) if machine_id_raw else None
+            ok, message = receive_next_process_label(transfer_barcode, receiving_process, received_qty_kg, machine_id, receiver_name, receive_note)
+            flash(message, 'success' if ok else 'danger')
+            return redirect(url_for('scan', barcode=transfer_barcode))
+
         barcode_text = request.form.get('barcode_text', '').strip()
         process_name = request.form.get('process_name', '').strip().upper()
         scan_time = normalize_dt(request.form.get('scan_time', '').strip()) or datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -1406,6 +1573,20 @@ def scan():
             (batch['id'], process_name, scan_time, input_qty_kg, good_qty_kg, reject_qty_kg, operator_name, int(machine_id_raw) if machine_id_raw else None, machine_name, line_id, next_action, remarks),
         )
         update_batch_stage(batch['id'], process_name, next_action)
+
+        issued_transfer_barcode = None
+        if next_action == 'MOVE_NEXT' and process_name in PROCESS_FLOW and process_name != PROCESS_FLOW[-1]:
+            to_process = PROCESS_FLOW[PROCESS_FLOW.index(process_name) + 1]
+            issued_transfer_barcode = create_next_process_label(
+                batch['id'],
+                process_name,
+                to_process,
+                good_qty_kg,
+                int(machine_id_raw) if machine_id_raw else None,
+                operator_name,
+                remarks,
+            )
+
         batch_after = query_one('SELECT * FROM batches WHERE id = ?', (batch['id'],))
         linked_item = query_one(
             '''
@@ -1425,6 +1606,8 @@ def scan():
                 item_status = 'COMPLETED'
             execute('UPDATE customer_file_items SET status = ? WHERE id = ?', (item_status, item_id))
             note_parts = [f'Input {input_qty_kg} KG', f'Good {good_qty_kg} KG', f'Reject {reject_qty_kg} KG']
+            if issued_transfer_barcode:
+                note_parts.append(f'Next process barcode: {issued_transfer_barcode}')
             if remarks:
                 note_parts.append(remarks)
             record_item_event(
@@ -1442,7 +1625,10 @@ def scan():
             status = 'RUNNING' if next_action in {'MOVE_NEXT', 'REWORK'} else 'IDLE'
             note = f'Last scan for {batch["batch_no"]} / {process_name}'
             update_machine_status(machine_row['id'], status, batch['id'] if status == 'RUNNING' else None, note)
-        flash('Process scan recorded.', 'success')
+        message = 'Process scan recorded.'
+        if issued_transfer_barcode:
+            message += f' Next process barcode issued: {issued_transfer_barcode}'
+        flash(message, 'success')
         return redirect(url_for('scan', barcode=barcode_text))
 
     if barcode:
@@ -1470,7 +1656,34 @@ def scan():
         '''
     )
     machines_list = get_machine_choices_for_process()
-    return render_template('scan.html', batch_lookup=batch_lookup, recent_logs=recent_logs, processes=PROCESS_FLOW, machines=machines_list)
+    next_labels_pending = query_all(
+        '''
+        SELECT npl.*, b.batch_no
+        FROM next_process_labels npl
+        JOIN batches b ON npl.batch_id = b.id
+        WHERE npl.status = 'ISSUED'
+        ORDER BY datetime(npl.issued_at) DESC, npl.id DESC
+        LIMIT 20
+        '''
+    )
+    recent_transfers = query_all(
+        '''
+        SELECT npl.*, b.batch_no
+        FROM next_process_labels npl
+        JOIN batches b ON npl.batch_id = b.id
+        ORDER BY datetime(npl.issued_at) DESC, npl.id DESC
+        LIMIT 25
+        '''
+    )
+    return render_template(
+        'scan.html',
+        batch_lookup=batch_lookup,
+        recent_logs=recent_logs,
+        processes=PROCESS_FLOW,
+        machines=machines_list,
+        next_labels_pending=next_labels_pending,
+        recent_transfers=recent_transfers,
+    )
 
 
 @app.route('/ot', methods=['GET', 'POST'])

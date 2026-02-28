@@ -71,6 +71,32 @@
   </div>
 </div>
 
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-white"><strong>Section WIP KG (by Next Process Barcodes)</strong></div>
+      <div class="card-body table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Section</th><th>Received KG</th><th>Issued Out KG</th><th>Estimated In Section KG</th></tr></thead>
+          <tbody>
+            {% for row in section_wip %}
+            <tr>
+              <td>{{ row.section }}</td>
+              <td>{{ row.received_kg }}</td>
+              <td>{{ row.issued_kg }}</td>
+              <td><strong>{{ row.in_section_kg }}</strong></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">No section WIP from transfer labels yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="row g-4">
   <div class="col-lg-7">
     <div class="card shadow-sm">
